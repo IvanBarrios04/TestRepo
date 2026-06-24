@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAIND — Juego Inteligente de Rompecabezas</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #07080f;
+    --surface: #0e101c;
+    --surface2: #161928;
+    --border: #252840;
+    --accent: #7c5cfc;
+    --accent2: #2de8c0;
+    --accent3: #f05a7e;
+    --text: #e8e8f0;
+    --text-dim: #7a7a9a;
+    --tile-bg: #1a1d30;
+    --tile-hover: #252840;
+    --tile-hint: rgba(124,92,252,0.35);
+    --energy-color: #2de8c0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* HEADER */
+  header {
+    position: relative; z-index: 10;
+    padding: 18px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: rgba(7,8,15,0.85);
+    backdrop-filter: blur(10px);
+  }
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.5rem; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    letter-spacing: 4px;
+  }
+  .tagline { font-size: 0.75rem; color: var(--text-dim); letter-spacing: 2px; text-transform: uppercase; }
+
+  /* TABS */
+  .tab-bar {
+    position: relative; z-index: 10;
+    display: flex; gap: 0;
+    padding: 0 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .tab-btn {
+    background: none; border: none; cursor: pointer;
+    padding: 14px 24px;
+    font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 700;
+    color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* MAIN LAYOUT */
+  .main { position: relative; z-index: 5; display: flex; min-height: calc(100vh - 110px); }
+  .game-area { flex: 1; padding: 28px 32px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  .sidebar {
+    width: 300px; min-width: 260px;
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+
+  /* PANELS */
+  .panel {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .panel-title {
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+
+  /* TABS CONTENT */
+  .tab-content { display: none; width: 100%; }
+  .tab-content.active { display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%; }
+
+  /* ===== 8-PUZZLE ===== */
+  #puzzle-board {
+    display: grid; grid-template-columns: repeat(3,1fr);
+    gap: 8px; width: 300px; height: 300px;
+  }
+  .puzzle-tile {
+    background: var(--tile-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Mono', monospace; font-size: 1.8rem; font-weight: 700;
+    cursor: pointer; transition: all 0.15s;
+    user-select: none; position: relative;
+  }
+  .puzzle-tile:hover:not(.empty):not(.solved-tile) {
+    background: var(--tile-hover);
+    border-color: var(--accent);
+    transform: scale(1.04);
+  }
+  .puzzle-tile.empty { background: transparent; border-color: transparent; cursor: default; }
+  .puzzle-tile.hint { background: var(--tile-hint); border-color: var(--accent); box-shadow: 0 0 18px rgba(124,92,252,0.4); }
+  .puzzle-tile.solving { animation: pulse 0.4s ease; }
+  .puzzle-tile.correct-pos { color: var(--accent2); }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+
+  /* ===== SUDOKU ===== */
+  #sudoku-board {
+    display: grid; grid-template-columns: repeat(9,1fr);
+    gap: 2px; width: 360px; height: 360px;
+    border: 2px solid var(--accent); border-radius: 8px; padding: 4px;
+  }
+  .sudoku-cell {
+    background: var(--tile-bg);
+    border: 1px solid #1e2035;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Mono', monospace; font-size: 1rem; font-weight: 700;
+    cursor: pointer; transition: all 0.15s;
+    border-radius: 3px; position: relative;
+  }
+  .sudoku-cell:hover:not(.given) { background: var(--tile-hover); }
+  .sudoku-cell.given { color: var(--accent2); cursor: default; }
+  .sudoku-cell.selected { background: rgba(124,92,252,0.25); border-color: var(--accent); }
+  .sudoku-cell.hint { background: rgba(124,92,252,0.3); border-color: var(--accent); }
+  .sudoku-cell.error { background: rgba(240,90,126,0.2); border-color: var(--accent3); color: var(--accent3); }
+  .sudoku-cell.box-border-right { border-right: 2px solid var(--accent); }
+  .sudoku-cell.box-border-bottom { border-bottom: 2px solid var(--accent); }
+  .sudoku-numpad {
+    display: grid; grid-template-columns: repeat(9,1fr);
+    gap: 6px; width: 360px;
+  }
+  .numpad-btn {
+    background: var(--tile-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 4px;
+    font-family: 'Space Mono', monospace; font-size: 0.9rem; font-weight: 700;
+    color: var(--text); cursor: pointer; transition: all 0.15s;
+    text-align: center;
+  }
+  .numpad-btn:hover { background: var(--tile-hover); border-color: var(--accent); }
+
+  /* ===== MAZE ===== */
+  #maze-canvas { border: 2px solid var(--border); border-radius: 8px; cursor: none; }
+  .maze-controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+  /* BUTTONS */
+  .btn {
+    padding: 10px 20px; border: none; border-radius: 8px;
+    font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 700;
+    cursor: pointer; transition: all 0.2s; letter-spacing: 0.5px;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #9575fd; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(124,92,252,0.4); }
+  .btn-success { background: var(--accent2); color: #07080f; }
+  .btn-success:hover { background: #50edd1; transform: translateY(-1px); }
+  .btn-danger { background: var(--accent3); color: #fff; }
+  .btn-danger:hover { background: #f37a95; transform: translateY(-1px); }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+  /* STATS */
+  .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+  .stat-value { font-family: 'Space Mono', monospace; font-size: 0.95rem; color: var(--accent2); }
+
+  /* ENERGY CHART */
+  #energy-canvas { width: 100%; height: 130px; border-radius: 8px; }
+
+  /* MESSAGE */
+  .message-box {
+    padding: 10px 16px; border-radius: 8px;
+    font-size: 0.85rem; text-align: center;
+    border: 1px solid var(--border);
+    min-height: 38px; display: flex; align-items: center; justify-content: center;
+  }
+  .message-box.success { background: rgba(45,232,192,0.1); border-color: var(--accent2); color: var(--accent2); }
+  .message-box.info { background: rgba(124,92,252,0.1); border-color: var(--accent); color: var(--accent); }
+  .message-box.warn { background: rgba(240,90,126,0.1); border-color: var(--accent3); color: var(--accent3); }
+
+  /* ALGORITHM INFO */
+  .algo-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    border: 1px solid;
+  }
+  .algo-badge.hopfield { border-color: var(--accent); color: var(--accent); background: rgba(124,92,252,0.1); }
+  .algo-badge.astar { border-color: var(--accent2); color: var(--accent2); background: rgba(45,232,192,0.1); }
+  .algo-badge.heuristic { border-color: var(--accent3); color: var(--accent3); background: rgba(240,90,126,0.1); }
+
+  .hint-steps { display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto; }
+  .hint-step {
+    font-size: 0.75rem; padding: 4px 8px; border-radius: 6px;
+    background: rgba(124,92,252,0.1); border-left: 2px solid var(--accent);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .difficulty-row { display: flex; gap: 6px; }
+  .diff-btn {
+    flex: 1; padding: 6px 4px; border: 1px solid var(--border); border-radius: 6px;
+    background: transparent; color: var(--text-dim); font-family: 'Syne', sans-serif;
+    font-size: 0.7rem; font-weight: 700; cursor: pointer; text-align: center;
+    transition: all 0.15s;
+  }
+  .diff-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* Solved overlay */
+  .solved-anim { animation: solved-flash 0.6s ease; }
+  @keyframes solved-flash {
+    0%{box-shadow:0 0 0 rgba(45,232,192,0)} 50%{box-shadow:0 0 40px rgba(45,232,192,0.6)} 100%{box-shadow:0 0 0 rgba(45,232,192,0)}
+  }
+
+  /* Maze direction hint */
+  .arrow-key-hint {
+    font-family: 'Space Mono', monospace; font-size: 0.75rem;
+    color: var(--text-dim); text-align: center;
+  }
+
+  @media (max-width: 900px) {
+    .main { flex-direction: column; }
+    .sidebar { width: 100%; border-left: none; border-top: 1px solid var(--border); }
+    #sudoku-board { width: 306px; height: 306px; }
+    .sudoku-numpad { width: 306px; }
+    #puzzle-board { width: 270px; height: 270px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">MAIND</div>
+    <div class="tagline">Red de Hopfield · Heurísticas · A*</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <span class="algo-badge hopfield">Hopfield</span>
+    <span class="algo-badge astar">A*</span>
+    <span class="algo-badge heuristic">Heurística</span>
+  </div>
+</header>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('puzzle')">8-Puzzle</button>
+  <button class="tab-btn" onclick="switchTab('sudoku')">Sudoku</button>
+  <button class="tab-btn" onclick="switchTab('maze')">Laberinto</button>
+</div>
+
+<div class="main">
+  <div class="game-area">
+
+    <!-- 8-PUZZLE -->
+    <div id="tab-puzzle" class="tab-content active">
+      <div id="puzzle-board"></div>
+      <div id="puzzle-message" class="message-box info" style="width:300px;">Mueve las fichas para resolver el puzzle</div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="puzzleShuffle()">↺ Mezclar</button>
+        <button class="btn btn-primary" onclick="puzzleHint()">💡 Sugerir</button>
+        <button class="btn btn-success" onclick="puzzleAutoSolve()">▶ Auto-resolver</button>
+        <button class="btn btn-danger" onclick="puzzleStop()">■ Detener</button>
+      </div>
+    </div>
+
+    <!-- SUDOKU -->
+    <div id="tab-sudoku" class="tab-content">
+      <div class="difficulty-row" style="width:360px;">
+        <button class="diff-btn active" onclick="sudokuSetDiff('easy',this)">Fácil</button>
+        <button class="diff-btn" onclick="sudokuSetDiff('medium',this)">Medio</button>
+        <button class="diff-btn" onclick="sudokuSetDiff('hard',this)">Difícil</button>
+      </div>
+      <div id="sudoku-board"></div>
+      <div class="sudoku-numpad" id="sudoku-numpad"></div>
+      <div id="sudoku-message" class="message-box info" style="width:360px;">Selecciona una celda y escribe un número</div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="sudokuNew()">↺ Nuevo</button>
+        <button class="btn btn-primary" onclick="sudokuHint()">💡 Pista</button>
+        <button class="btn btn-success" onclick="sudokuSolve()">▶ Resolver</button>
+      </div>
+    </div>
+
+    <!-- MAZE -->
+    <div id="tab-maze" class="tab-content">
+      <canvas id="maze-canvas" width="360" height="360"></canvas>
+      <div class="arrow-key-hint">← ↑ ↓ → para mover · también click/tap en la dirección</div>
+      <div id="maze-message" class="message-box info" style="width:360px;">Llega desde 🟢 hasta 🔴</div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="mazeNew()">↺ Nuevo</button>
+        <button class="btn btn-primary" onclick="mazeHint()">💡 Siguiente paso</button>
+        <button class="btn btn-success" onclick="mazeSolveAnim()">▶ Resolver</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- Stats -->
+    <div class="panel">
+      <div class="panel-title">Estadísticas</div>
+      <div class="stat-row"><span class="stat-label">Movimientos</span><span class="stat-value" id="stat-moves">0</span></div>
+      <div class="stat-row"><span class="stat-label">Energía actual</span><span class="stat-value" id="stat-energy">—</span></div>
+      <div class="stat-row"><span class="stat-label">Estado</span><span class="stat-value" id="stat-status">Jugando</span></div>
+    </div>
+
+    <!-- Energy chart -->
+    <div class="panel">
+      <div class="panel-title">Visualización de Energía Hopfield</div>
+      <canvas id="energy-canvas"></canvas>
+      <div style="font-size:0.65rem;color:var(--text-dim);margin-top:6px;text-align:center;">
+        Energía converge a mínimo al resolver
+      </div>
+    </div>
+
+    <!-- Hint steps -->
+    <div class="panel">
+      <div class="panel-title">Sugerencias IA</div>
+      <div class="hint-steps" id="hint-steps">
+        <div class="hint-step">Presiona "Sugerir" para recibir la próxima jugada óptima</div>
+      </div>
+    </div>
+
+    <!-- Algorithm explanation -->
+    <div class="panel">
+      <div class="panel-title">Algoritmo activo</div>
+      <div id="algo-explain" style="font-size:0.75rem;color:var(--text-dim);line-height:1.6;">
+        <strong style="color:var(--accent)">Red de Hopfield:</strong> Calcula la energía del estado actual. Los movimientos que reducen la energía se acercan a la solución.<br><br>
+        <strong style="color:var(--accent2)">Heurística A*:</strong> Distancia Manhattan para encontrar el camino óptimo.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ========================
+// UTILITIES
+// ========================
+function cloneArr(a) { return JSON.parse(JSON.stringify(a)); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ========================
+// TAB SYSTEM
+// ========================
+let activeTab = 'puzzle';
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  event.target.classList.add('active');
+  activeTab = tab;
+  if (tab === 'puzzle') { puzzleRender(); }
+  if (tab === 'sudoku') { sudokuRender(); }
+  if (tab === 'maze') { mazeDraw(); }
+  energyHistory = [];
+  energyDraw();
+  updateStats(0, null, 'Jugando');
+}
+
+// ========================
+// HOPFIELD NETWORK
+// ========================
+class HopfieldNetwork {
+  constructor(size) {
+    this.size = size;
+    this.weights = Array.from({length: size}, () => new Array(size).fill(0));
+  }
+  train(patterns) {
+    for (const pat of patterns) {
+      for (let i = 0; i < this.size; i++)
+        for (let j = 0; j < this.size; j++)
+          if (i !== j) this.weights[i][j] += pat[i] * pat[j];
+    }
+    const n = patterns.length;
+    for (let i = 0; i < this.size; i++)
+      for (let j = 0; j < this.size; j++)
+        this.weights[i][j] /= n;
+  }
+  energy(state) {
+    let e = 0;
+    for (let i = 0; i < this.size; i++)
+      for (let j = 0; j < this.size; j++)
+        e -= this.weights[i][j] * state[i] * state[j];
+    return e * 0.5;
+  }
+}
+
+// ========================
+// ENERGY TRACKING
+// ========================
+let energyHistory = [];
+function pushEnergy(val) {
+  energyHistory.push(val);
+  if (energyHistory.length > 60) energyHistory.shift();
+  energyDraw();
+  document.getElementById('stat-energy').textContent = val.toFixed(2);
+}
+function energyDraw() {
+  const canvas = document.getElementById('energy-canvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 260, H = 130;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+  // bg
+  ctx.fillStyle = '#0a0c18';
+  ctx.fillRect(0, 0, W, H);
+  if (energyHistory.length < 2) {
+    ctx.fillStyle = '#7a7a9a'; ctx.font = '12px Space Mono';
+    ctx.fillText('Sin datos aún...', 10, H/2);
+    return;
+  }
+  const min = Math.min(...energyHistory), max = Math.max(...energyHistory);
+  const range = max - min || 1;
+  const toY = v => H - 10 - ((v - min) / range) * (H - 20);
+  // grid lines
+  ctx.strokeStyle = '#1e2035'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = 10 + (i / 4) * (H - 20);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  // gradient fill
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, 'rgba(45,232,192,0.3)');
+  grad.addColorStop(1, 'rgba(45,232,192,0)');
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  for (let i = 0; i < energyHistory.length; i++) {
+    const x = (i / (energyHistory.length - 1)) * W;
+    ctx.lineTo(x, toY(energyHistory[i]));
+  }
+  ctx.lineTo(W, H); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+  // line
+  ctx.beginPath(); ctx.strokeStyle = '#2de8c0'; ctx.lineWidth = 2;
+  for (let i = 0; i < energyHistory.length; i++) {
+    const x = (i / (energyHistory.length - 1)) * W;
+    if (i === 0) ctx.moveTo(x, toY(energyHistory[i]));
+    else ctx.lineTo(x, toY(energyHistory[i]));
+  }
+  ctx.stroke();
+  // dots
+  ctx.fillStyle = '#2de8c0';
+  if (energyHistory.length > 1) {
+    const last = energyHistory.length - 1;
+    ctx.beginPath();
+    ctx.arc(W, toY(energyHistory[last]), 4, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function updateStats(moves, energy, status) {
+  document.getElementById('stat-moves').textContent = moves;
+  if (energy !== null) document.getElementById('stat-energy').textContent = energy.toFixed(2);
+  document.getElementById('stat-status').textContent = status;
+}
+function addHintStep(text) {
+  const el = document.getElementById('hint-steps');
+  const div = document.createElement('div');
+  div.className = 'hint-step';
+  div.textContent = text;
+  el.insertBefore(div, el.firstChild);
+  while (el.children.length > 8) el.removeChild(el.lastChild);
+}
+function setMessage(id, text, type='info') {
+  const el = document.getElementById(id);
+  el.className = 'message-box ' + type;
+  el.textContent = text;
+}
+
+// ========================
+// 8-PUZZLE
+// ========================
+const PUZZLE_GOAL = [1,2,3,4,5,6,7,8,0];
+let puzzleBoard = [], puzzleMoves = 0, puzzleSolving = false, puzzleTimer = null;
+let puzzleHopfield;
+
+function puzzleInit() {
+  puzzleHopfield = new HopfieldNetwork(9);
+  const goalPat = puzzleBoardToPattern(PUZZLE_GOAL);
+  puzzleHopfield.train([goalPat]);
+  puzzleBoard = puzzleCreate();
+  puzzleMoves = 0;
+  energyHistory = [];
+  puzzleRender();
+}
+
+function puzzleCreate() {
+  let board = [...PUZZLE_GOAL];
+  for (let i = 0; i < 200; i++) {
+    const moves = puzzleGetMoves(board);
+    const m = moves[Math.floor(Math.random() * moves.length)];
+    puzzleDoMove(board, m);
+  }
+  return board;
+}
+
+function puzzleGetMoves(board) {
+  const empty = board.indexOf(0);
+  const row = Math.floor(empty / 3), col = empty % 3;
+  const moves = [];
+  if (row > 0) moves.push(empty - 3);
+  if (row < 2) moves.push(empty + 3);
+  if (col > 0) moves.push(empty - 1);
+  if (col < 2) moves.push(empty + 1);
+  return moves;
+}
+
+function puzzleDoMove(board, idx) {
+  const empty = board.indexOf(0);
+  if (puzzleGetMoves(board).includes(idx)) {
+    [board[empty], board[idx]] = [board[idx], board[empty]];
+    return true;
+  }
+  return false;
+}
+
+function puzzleBoardToPattern(board) {
+  return board.map((v, i) => (v === i + 1 || (i === 8 && v === 0)) ? 1 : -1);
+}
+
+function puzzleIsSolved(board) {
+  return board.every((v, i) => v === PUZZLE_GOAL[i]);
+}
+
+// A* solver
+function puzzleSolveAStar(board) {
+  const goalStr = PUZZLE_GOAL.join(',');
+  const manhattan = (b) => {
+    let d = 0;
+    for (let i = 0; i < 9; i++) {
+      if (b[i] === 0) continue;
+      const goal = b[i] - 1;
+      d += Math.abs(Math.floor(i/3) - Math.floor(goal/3)) + Math.abs(i%3 - goal%3);
+    }
+    return d;
+  };
+  const pq = [{ board: [...board], path: [], g: 0, f: manhattan(board) }];
+  const visited = new Set([board.join(',')]);
+  let iterations = 0;
+  while (pq.length && iterations < 200000) {
+    iterations++;
+    pq.sort((a,b) => a.f - b.f);
+    const { board: cur, path, g } = pq.shift();
+    if (cur.join(',') === goalStr) return path;
+    const moves = puzzleGetMoves(cur);
+    for (const m of moves) {
+      const next = [...cur];
+      const empty = next.indexOf(0);
+      [next[empty], next[m]] = [next[m], next[empty]];
+      const key = next.join(',');
+      if (!visited.has(key)) {
+        visited.add(key);
+        const ng = g + 1;
+        pq.push({ board: next, path: [...path, m], g: ng, f: ng + manhattan(next) });
+      }
+    }
+  }
+  return null;
+}
+
+let puzzleHintMoves = [];
+function puzzleHint() {
+  if (puzzleIsSolved(puzzleBoard)) return;
+  if (puzzleHintMoves.length === 0) {
+    const sol = puzzleSolveAStar(puzzleBoard);
+    if (sol) puzzleHintMoves = sol;
+  }
+  if (puzzleHintMoves.length > 0) {
+    const nextMove = puzzleHintMoves[0];
+    puzzleRender(nextMove);
+    const tile = puzzleBoard[nextMove];
+    addHintStep(`Mover ficha ${tile} → posición vacía`);
+    setMessage('puzzle-message', `💡 Mueve la ficha ${tile}`, 'info');
+  }
+}
+
+let puzzleAutoInterval = null;
+async function puzzleAutoSolve() {
+  if (puzzleSolving) return;
+  puzzleSolving = true;
+  const sol = puzzleSolveAStar(puzzleBoard);
+  if (!sol) { setMessage('puzzle-message','No se encontró solución','warn'); puzzleSolving=false; return; }
+  puzzleHintMoves = [];
+  for (const m of sol) {
+    if (!puzzleSolving) break;
+    puzzleDoMove(puzzleBoard, m);
+    puzzleMoves++;
+    const energy = puzzleHopfield.energy(puzzleBoardToPattern(puzzleBoard));
+    pushEnergy(energy);
+    updateStats(puzzleMoves, energy, 'Resolviendo...');
+    const tile = document.getElementById('puzzle-board').children[m];
+    if (tile) tile.classList.add('solving');
+    puzzleRender();
+    await sleep(300);
+  }
+  puzzleSolving = false;
+  if (puzzleIsSolved(puzzleBoard)) {
+    setMessage('puzzle-message', '🎉 ¡Resuelto! Excelente.', 'success');
+    document.getElementById('puzzle-board').classList.add('solved-anim');
+    updateStats(puzzleMoves, null, '✅ Resuelto');
+    addHintStep('✅ Puzzle resuelto con A*');
+  }
+}
+
+function puzzleStop() { puzzleSolving = false; }
+
+function puzzleShuffle() {
+  puzzleSolving = false;
+  puzzleBoard = puzzleCreate();
+  puzzleMoves = 0;
+  puzzleHintMoves = [];
+  energyHistory = [];
+  energyDraw();
+  puzzleRender();
+  setMessage('puzzle-message', 'Mueve las fichas para resolver el puzzle', 'info');
+  updateStats(0, null, 'Jugando');
+}
+
+function puzzleRender(hintIdx = -1) {
+  const container = document.getElementById('puzzle-board');
+  container.innerHTML = '';
+  const energy = puzzleHopfield.energy(puzzleBoardToPattern(puzzleBoard));
+  pushEnergy(energy);
+  puzzleBoard.forEach((val, i) => {
+    const div = document.createElement('div');
+    div.className = 'puzzle-tile';
+    if (val === 0) div.classList.add('empty');
+    else {
+      div.textContent = val;
+      if (val === PUZZLE_GOAL[i]) div.classList.add('correct-pos');
+    }
+    if (i === hintIdx) div.classList.add('hint');
+    div.addEventListener('click', () => {
+      if (puzzleSolving) return;
+      if (puzzleDoMove(puzzleBoard, i)) {
+        puzzleMoves++;
+        puzzleHintMoves = [];
+        const e = puzzleHopfield.energy(puzzleBoardToPattern(puzzleBoard));
+        pushEnergy(e);
+        updateStats(puzzleMoves, e, puzzleIsSolved(puzzleBoard) ? '✅ Resuelto' : 'Jugando');
+        puzzleRender();
+        if (puzzleIsSolved(puzzleBoard)) {
+          setMessage('puzzle-message', '🎉 ¡Resuelto! ¡Muy bien!', 'success');
+          document.getElementById('puzzle-board').classList.add('solved-anim');
+        }
+      }
+    });
+    container.appendChild(div);
+  });
+  updateStats(puzzleMoves, energy, puzzleIsSolved(puzzleBoard) ? '✅ Resuelto' : 'Jugando');
+}
+
+// ========================
+// SUDOKU
+// ========================
+let sudokuPuzzle = [], sudokuSolution = [], sudokuSelected = -1, sudokuDiff = 'easy';
+
+const SUDOKU_PRESETS = {
+  easy: [
+    [5,3,0,0,7,0,0,0,0],
+    [6,0,0,1,9,5,0,0,0],
+    [0,9,8,0,0,0,0,6,0],
+    [8,0,0,0,6,0,0,0,3],
+    [4,0,0,8,0,3,0,0,1],
+    [7,0,0,0,2,0,0,0,6],
+    [0,6,0,0,0,0,2,8,0],
+    [0,0,0,4,1,9,0,0,5],
+    [0,0,0,0,8,0,0,7,9]
+  ],
+  medium: [
+    [0,0,0,2,6,0,7,0,1],
+    [6,8,0,0,7,0,0,9,0],
+    [1,9,0,0,0,4,5,0,0],
+    [8,2,0,1,0,0,0,4,0],
+    [0,0,4,6,0,2,9,0,0],
+    [0,5,0,0,0,3,0,2,8],
+    [0,0,9,3,0,0,0,7,4],
+    [0,4,0,0,5,0,0,3,6],
+    [7,0,3,0,1,8,0,0,0]
+  ],
+  hard: [
+    [0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,3,0,8,5],
+    [0,0,1,0,2,0,0,0,0],
+    [0,0,0,5,0,7,0,0,0],
+    [0,0,4,0,0,0,1,0,0],
+    [0,9,0,0,0,0,0,0,0],
+    [5,0,0,0,0,0,0,7,3],
+    [0,0,2,0,1,0,0,0,0],
+    [0,0,0,0,4,0,0,0,9]
+  ]
+};
+
+function sudokuSetDiff(d, btn) {
+  sudokuDiff = d;
+  document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  sudokuNew();
+}
+
+function sudokuNew() {
+  const presets = SUDOKU_PRESETS;
+  sudokuPuzzle = cloneArr(presets[sudokuDiff]);
+  sudokuSolution = cloneArr(sudokuPuzzle);
+  sudokuSolveFull(sudokuSolution);
+  sudokuSelected = -1;
+  energyHistory = [];
+  energyDraw();
+  sudokuRender();
+  setMessage('sudoku-message', 'Selecciona una celda y escribe un número', 'info');
+  updateStats(0, null, 'Jugando');
+}
+
+function sudokuIsValid(board, row, col, num) {
+  for (let c = 0; c < 9; c++) if (board[row][c] === num) return false;
+  for (let r = 0; r < 9; r++) if (board[r][col] === num) return false;
+  const br = Math.floor(row/3)*3, bc = Math.floor(col/3)*3;
+  for (let r = br; r < br+3; r++)
+    for (let c = bc; c < bc+3; c++)
+      if (board[r][c] === num) return false;
+  return true;
+}
+
+function sudokuSolveFull(board) {
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (board[r][c] === 0) {
+        const nums = [1,2,3,4,5,6,7,8,9].sort(() => Math.random() - 0.5);
+        for (const n of nums) {
+          if (sudokuIsValid(board, r, c, n)) {
+            board[r][c] = n;
+            if (sudokuSolveFull(board)) return true;
+            board[r][c] = 0;
+          }
+        }
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function sudokuHopfieldEnergy(board) {
+  let conflicts = 0;
+  for (let r = 0; r < 9; r++) {
+    const row = board[r].filter(v => v > 0);
+    conflicts += row.length - new Set(row).size;
+  }
+  for (let c = 0; c < 9; c++) {
+    const col = board.map(r => r[c]).filter(v => v > 0);
+    conflicts += col.length - new Set(col).size;
+  }
+  for (let br = 0; br < 3; br++) for (let bc = 0; bc < 3; bc++) {
+    const box = [];
+    for (let r = br*3; r < br*3+3; r++)
+      for (let c = bc*3; c < bc*3+3; c++)
+        if (board[r][c] > 0) box.push(board[r][c]);
+    conflicts += box.length - new Set(box).size;
+  }
+  return -conflicts * 10;
+}
+
+function sudokuRender(highlightCell=-1, errorCells=[]) {
+  const container = document.getElementById('sudoku-board');
+  container.innerHTML = '';
+  const preset = SUDOKU_PRESETS[sudokuDiff];
+  let filled = 0;
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const idx = r * 9 + c;
+      const div = document.createElement('div');
+      div.className = 'sudoku-cell';
+      const isGiven = preset[r][c] !== 0;
+      if (isGiven) div.classList.add('given');
+      if (idx === sudokuSelected) div.classList.add('selected');
+      if (idx === highlightCell) div.classList.add('hint');
+      if (errorCells.includes(idx)) div.classList.add('error');
+      if ((c+1) % 3 === 0 && c < 8) div.classList.add('box-border-right');
+      if ((r+1) % 3 === 0 && r < 8) div.classList.add('box-border-bottom');
+      const val = sudokuPuzzle[r][c];
+      if (val !== 0) { div.textContent = val; filled++; }
+      if (!isGiven) {
+        div.addEventListener('click', () => { sudokuSelected = idx; sudokuRender(); });
+      }
+      container.appendChild(div);
+    }
+  }
+  const energy = sudokuHopfieldEnergy(sudokuPuzzle);
+  pushEnergy(energy);
+  updateStats(filled - SUDOKU_PRESETS[sudokuDiff].flat().filter(v=>v>0).length, energy,
+    sudokuIsDone() ? '✅ Resuelto' : 'Jugando');
+
+  // numpad
+  const numpad = document.getElementById('sudoku-numpad');
+  numpad.innerHTML = '';
+  for (let n = 1; n <= 9; n++) {
+    const btn = document.createElement('button');
+    btn.className = 'numpad-btn'; btn.textContent = n;
+    btn.addEventListener('click', () => sudokuInput(n));
+    numpad.appendChild(btn);
+  }
+}
+
+function sudokuInput(num) {
+  if (sudokuSelected < 0) return;
+  const r = Math.floor(sudokuSelected / 9), c = sudokuSelected % 9;
+  const isGiven = SUDOKU_PRESETS[sudokuDiff][r][c] !== 0;
+  if (isGiven) return;
+  sudokuPuzzle[r][c] = num;
+  // validate
+  const errors = [];
+  for (let row = 0; row < 9; row++) for (let col = 0; col < 9; col++) {
+    const v = sudokuPuzzle[row][col];
+    if (v === 0) continue;
+    for (let col2 = 0; col2 < 9; col2++) if (col2 !== col && sudokuPuzzle[row][col2] === v) errors.push(row*9+col);
+    for (let row2 = 0; row2 < 9; row2++) if (row2 !== row && sudokuPuzzle[row2][col] === v) errors.push(row*9+col);
+  }
+  sudokuRender(sudokuSelected, errors);
+  if (sudokuIsDone()) {
+    setMessage('sudoku-message', '🎉 ¡Sudoku resuelto! ¡Brillante!', 'success');
+    updateStats(0, null, '✅ Resuelto');
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (activeTab === 'sudoku' && sudokuSelected >= 0) {
+    const n = parseInt(e.key);
+    if (n >= 1 && n <= 9) sudokuInput(n);
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      const r = Math.floor(sudokuSelected/9), c = sudokuSelected%9;
+      if (!SUDOKU_PRESETS[sudokuDiff][r][c]) { sudokuPuzzle[r][c] = 0; sudokuRender(); }
+    }
+    const arrows = {'ArrowRight':1,'ArrowLeft':-1,'ArrowDown':9,'ArrowUp':-9};
+    if (arrows[e.key] !== undefined) {
+      sudokuSelected = Math.max(0, Math.min(80, sudokuSelected + arrows[e.key]));
+      sudokuRender();
+      e.preventDefault();
+    }
+  }
+  if (activeTab === 'maze') {
+    const dirs = {'ArrowUp':[0,-1],'ArrowDown':[0,1],'ArrowLeft':[-1,0],'ArrowRight':[1,0]};
+    if (dirs[e.key]) { mazeMove(...dirs[e.key]); e.preventDefault(); }
+  }
+  if (activeTab === 'puzzle') {
+    // arrow keys move tiles
+    const empty = puzzleBoard.indexOf(0);
+    const keyMoves = {
+      'ArrowUp': empty + 3, 'ArrowDown': empty - 3,
+      'ArrowLeft': empty + 1, 'ArrowRight': empty - 1
+    };
+    const m = keyMoves[e.key];
+    if (m !== undefined && m >= 0 && m < 9) {
+      if (puzzleDoMove(puzzleBoard, m)) {
+        puzzleMoves++;
+        const en = puzzleHopfield.energy(puzzleBoardToPattern(puzzleBoard));
+        pushEnergy(en);
+        updateStats(puzzleMoves, en, puzzleIsSolved(puzzleBoard) ? '✅ Resuelto' : 'Jugando');
+        puzzleRender();
+        if (puzzleIsSolved(puzzleBoard)) setMessage('puzzle-message','🎉 ¡Resuelto!','success');
+        e.preventDefault();
+      }
+    }
+  }
+});
+
+function sudokuIsDone() {
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++)
+      if (sudokuPuzzle[r][c] !== sudokuSolution[r][c]) return false;
+  return true;
+}
+
+function sudokuHint() {
+  // Find first wrong empty cell and fill it
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (sudokuPuzzle[r][c] === 0) {
+        const sol = sudokuSolution[r][c];
+        sudokuPuzzle[r][c] = sol;
+        const idx = r*9+c;
+        sudokuSelected = idx;
+        addHintStep(`Celda (${r+1},${c+1}) = ${sol}`);
+        setMessage('sudoku-message', `💡 Pista: celda fila ${r+1}, col ${c+1} = ${sol}`, 'info');
+        sudokuRender(idx);
+        if (sudokuIsDone()) {
+          setMessage('sudoku-message','🎉 ¡Sudoku resuelto!','success');
+          updateStats(0, null, '✅ Resuelto');
+        }
+        return;
+      }
+    }
+  }
+}
+
+async function sudokuSolve() {
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++)
+      if (!SUDOKU_PRESETS[sudokuDiff][r][c]) {
+        sudokuPuzzle[r][c] = sudokuSolution[r][c];
+        sudokuRender(r*9+c);
+        await sleep(30);
+      }
+  setMessage('sudoku-message','🎉 ¡Resuelto con backtracking!','success');
+  updateStats(0, null, '✅ Resuelto');
+}
+
+// ========================
+// MAZE
+// ========================
+const MAZE_SIZE = 15;
+let maze = [], mazePlayer = {x:0,y:0}, mazeGoal = {x:MAZE_SIZE-1,y:MAZE_SIZE-1};
+let mazeSolPath = [], mazeSolIdx = 0, mazeSolvingAnim = false;
+
+function mazeNew() {
+  mazeSolvingAnim = false;
+  mazePlayer = {x:0, y:0};
+  mazeGoal = {x:MAZE_SIZE-1, y:MAZE_SIZE-1};
+  maze = mazeGenerate(MAZE_SIZE, MAZE_SIZE);
+  mazeSolPath = [];
+  energyHistory = [];
+  energyDraw();
+  mazeDraw();
+  setMessage('maze-message','Llega desde 🟢 hasta 🔴','info');
+  updateStats(0, null, 'Jugando');
+}
+
+function mazeGenerate(W, H) {
+  const grid = Array.from({length:H}, () => Array.from({length:W}, () => ({
+    top:true, bottom:true, left:true, right:true, visited:false
+  })));
+  function dfs(x, y) {
+    grid[y][x].visited = true;
+    const dirs = [{dx:0,dy:-1,wall:'top',opp:'bottom'},{dx:0,dy:1,wall:'bottom',opp:'top'},{dx:-1,dy:0,wall:'left',opp:'right'},{dx:1,dy:0,wall:'right',opp:'left'}]
+      .sort(() => Math.random() - 0.5);
+    for (const {dx,dy,wall,opp} of dirs) {
+      const nx=x+dx, ny=y+dy;
+      if (nx>=0&&nx<W&&ny>=0&&ny<H&&!grid[ny][nx].visited) {
+        grid[y][x][wall]=false; grid[ny][nx][opp]=false;
+        dfs(nx,ny);
+      }
+    }
+  }
+  dfs(0,0);
+  return grid;
+}
+
+function mazeMoveAllowed(x,y,dx,dy) {
+  if (x+dx<0||x+dx>=MAZE_SIZE||y+dy<0||y+dy>=MAZE_SIZE) return false;
+  if (dx===1 && maze[y][x].right) return false;
+  if (dx===-1 && maze[y][x].left) return false;
+  if (dy===1 && maze[y][x].bottom) return false;
+  if (dy===-1 && maze[y][x].top) return false;
+  return true;
+}
+
+function mazeMove(dx, dy) {
+  if (mazeSolvingAnim) return;
+  if (mazeMoveAllowed(mazePlayer.x, mazePlayer.y, dx, dy)) {
+    mazePlayer.x += dx; mazePlayer.y += dy;
+    mazeSolPath = [];
+    // energy: distance to goal
+    const dist = Math.abs(mazePlayer.x - mazeGoal.x) + Math.abs(mazePlayer.y - mazeGoal.y);
+    pushEnergy(-dist * 5);
+    updateStats(Math.abs(mazePlayer.x)+Math.abs(mazePlayer.y), null, 'Jugando');
+    mazeDraw();
+    if (mazePlayer.x===mazeGoal.x && mazePlayer.y===mazeGoal.y) {
+      setMessage('maze-message','🎉 ¡Llegaste al final! ¡Bien hecho!','success');
+      updateStats(0, null, '✅ Resuelto');
+    }
+  }
+}
+
+function mazeAStar() {
+  const start = {...mazePlayer}, goal = {...mazeGoal};
+  const h = (n) => Math.abs(n.x-goal.x)+Math.abs(n.y-goal.y);
+  const key = (n) => n.x+','+n.y;
+  const open = [{...start,g:0,f:h(start),path:[]}];
+  const closed = new Set();
+  while (open.length) {
+    open.sort((a,b)=>a.f-b.f);
+    const cur = open.shift();
+    if (cur.x===goal.x && cur.y===goal.y) return cur.path;
+    closed.add(key(cur));
+    const dirs = [{dx:0,dy:-1},{dx:0,dy:1},{dx:-1,dy:0},{dx:1,dy:0}];
+    for (const {dx,dy} of dirs) {
+      if (!mazeMoveAllowed(cur.x,cur.y,dx,dy)) continue;
+      const nx={x:cur.x+dx,y:cur.y+dy};
+      if (closed.has(key(nx))) continue;
+      const ng=cur.g+1;
+      open.push({...nx,g:ng,f:ng+h(nx),path:[...cur.path,{dx,dy}]});
+    }
+  }
+  return null;
+}
+
+function mazeHint() {
+  const path = mazeAStar();
+  if (!path || path.length===0) return;
+  const next = path[0];
+  const nx = mazePlayer.x + next.dx, ny = mazePlayer.y + next.dy;
+  mazeDraw(nx, ny);
+  const dirs = {'-1,0':'← izquierda','1,0':'→ derecha','0,-1':'↑ arriba','0,1':'↓ abajo'};
+  const dirStr = dirs[next.dx+','+next.dy] || '';
+  addHintStep(`Ir ${dirStr}`);
+  setMessage('maze-message',`💡 Ve ${dirStr}`,'info');
+}
+
+async function mazeSolveAnim() {
+  mazeSolvingAnim = true;
+  const path = mazeAStar();
+  if (!path) { setMessage('maze-message','No hay solución','warn'); mazeSolvingAnim=false; return; }
+  for (const {dx,dy} of path) {
+    if (!mazeSolvingAnim) break;
+    mazePlayer.x += dx; mazePlayer.y += dy;
+    const dist = Math.abs(mazePlayer.x-mazeGoal.x)+Math.abs(mazePlayer.y-mazeGoal.y);
+    pushEnergy(-dist*5);
+    mazeDraw();
+    await sleep(80);
+  }
+  mazeSolvingAnim = false;
+  if (mazePlayer.x===mazeGoal.x && mazePlayer.y===mazeGoal.y) {
+    setMessage('maze-message','🎉 ¡Laberinto resuelto con A*!','success');
+    updateStats(0, null, '✅ Resuelto');
+  }
+}
+
+function mazeDraw(hintX=-1, hintY=-1) {
+  const canvas = document.getElementById('maze-canvas');
+  const ctx = canvas.getContext('2d');
+  const CW = canvas.width, CH = canvas.height;
+  const cw = CW / MAZE_SIZE, ch = CH / MAZE_SIZE;
+  ctx.clearRect(0,0,CW,CH);
+  ctx.fillStyle = '#0a0c18'; ctx.fillRect(0,0,CW,CH);
+
+  // Draw cells
+  for (let y = 0; y < MAZE_SIZE; y++) {
+    for (let x = 0; x < MAZE_SIZE; x++) {
+      const px = x*cw, py = y*ch;
+      // Hint highlight
+      if (x===hintX && y===hintY) {
+        ctx.fillStyle='rgba(124,92,252,0.3)';
+        ctx.fillRect(px+1,py+1,cw-2,ch-2);
+      }
+      // Draw walls
+      ctx.strokeStyle = '#7c5cfc'; ctx.lineWidth = 1.5;
+      const cell = maze[y][x];
+      if (cell.top)    { ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px+cw,py); ctx.stroke(); }
+      if (cell.bottom) { ctx.beginPath(); ctx.moveTo(px,py+ch); ctx.lineTo(px+cw,py+ch); ctx.stroke(); }
+      if (cell.left)   { ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px,py+ch); ctx.stroke(); }
+      if (cell.right)  { ctx.beginPath(); ctx.moveTo(px+cw,py); ctx.lineTo(px+cw,py+ch); ctx.stroke(); }
+    }
+  }
+  // Goal
+  ctx.fillStyle = 'rgba(240,90,126,0.8)';
+  const gx=mazeGoal.x*cw+cw*0.15, gy=mazeGoal.y*ch+ch*0.15;
+  ctx.beginPath(); ctx.arc(gx+cw*0.35, gy+ch*0.35, Math.min(cw,ch)*0.3, 0, Math.PI*2); ctx.fill();
+  // Player
+  ctx.fillStyle = '#2de8c0';
+  const ppx = mazePlayer.x*cw+cw*0.5, ppy = mazePlayer.y*ch+ch*0.5;
+  ctx.beginPath(); ctx.arc(ppx, ppy, Math.min(cw,ch)*0.32, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle='#07080f'; ctx.font=`bold ${Math.min(cw,ch)*0.3}px Syne`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('●', ppx, ppy);
+}
+
+// Touch/click support for maze
+document.getElementById('maze-canvas').addEventListener('click', (e) => {
+  const rect = e.target.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const cw = rect.width / MAZE_SIZE, ch = rect.height / MAZE_SIZE;
+  const cx = Math.floor(x / cw), cy = Math.floor(y / ch);
+  const dx = Math.sign(cx - mazePlayer.x), dy = Math.sign(cy - mazePlayer.y);
+  if (Math.abs(cx-mazePlayer.x) >= Math.abs(cy-mazePlayer.y)) mazeMove(dx, 0);
+  else mazeMove(0, dy);
+});
+
+// ========================
+// INIT
+// ========================
+puzzleInit();
+sudokuNew();
+mazeNew();
+</script>
+</body>
+</html>
